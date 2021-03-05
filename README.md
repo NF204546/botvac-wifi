@@ -12,9 +12,9 @@ forked from HawtDogFlvrWtr/botvac-wifi
 	
 *2. 去掉mDNS相关语句，同时修改setupEvent()中生成的网页，相关链接改用IP    
 
-*3. 原项目中的rBase64语句，如 x=rbase64.encode(stringY);      
-	经测试不能正常工作，改为： 
-	rbase64.encode(stringY);   
-	x = rbase64.result();    
-	或者引用 Esp8266 v2.7.4所带 base64.h    
-	x = base64::encode(stringY);  
+*3. 原项目中的rBase64语句，如 x=rbase64.encode(stringY);        
+	经测试不能正常工作，改为：   
+	rbase64.encode(stringY);    
+	x = rbase64.result();      
+	或者引用 Esp8266 v2.7.4所带 base64.h      
+	x = base64::encode(stringY);   
