@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
+// #include <ESP8266mDNS.h>
 #include <WiFiClient.h>
 #include <WebSocketsServer.h>
 #include <Hash.h>
@@ -11,7 +11,8 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <ESP8266HTTPClient.h>
 #include <TimedAction.h>
-#include <rBase64.h>
+// #include <rBase64.h>
+#include <Base64.h>
 
 
 #define SSID_FILE "etc/ssid"
@@ -41,7 +42,8 @@ WiFiClient client;
 int bufferSize = 0;
 uint8_t currentClient = 0;
 uint8_t serialBuffer[8193];
-ESP8266WebServer server = ESP8266WebServer(80);
+// ESP8266WebServer server = ESP8266WebServer(80);
+ESP8266WebServer server (80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266WebServer updateServer(82);
 ESP8266HTTPUpdateServer httpUpdater;
@@ -156,7 +158,7 @@ void getError() {
     int serialString = incomingErrTemp.indexOf(" - ");
     int capUntil = serialString-4;
     if (serialString > -1){
-      incomingErr = rbase64.encode(incomingErrTemp.substring(capUntil,serialString));
+      incomingErr = base64::encode(incomingErrTemp.substring(capUntil,serialString));
       incomingErr.replace('+', '-');
       incomingErr.replace('/', '_');
       incomingErr.replace('=', ',');
@@ -215,7 +217,7 @@ void getBattery() {
         }
       }
     }
-    batteryInfo = rbase64.encode(batteryInfo);
+    batteryInfo = base64::encode(batteryInfo);
     batteryInfo.replace('+', '-');
     batteryInfo.replace('/', '_');
     batteryInfo.replace('=', ',');
@@ -293,13 +295,20 @@ void setupEvent() {
   "<input type=\"text\" name=\"password\" value=\"" + passwd + "\"> <br />" +
   "<br />" +
   "<input type=\"submit\" value=\"Submit\"> </form>" +
-  "<form action=\"http://neato.local/reboot\" style=\"display: inline;\">" +
+  "<form id='idFormaction' action='' style=\"display: inline;\">" +
   "<input type=\"submit\" value=\"Reboot\" />" +
   "</form>" +
   "<p>Enter the details for your access point. After you submit, the controller will reboot to apply the settings.</p>" +
-  "<p><a href=\"http://neato.local:82/update\">Update Firmware</a></p>" +
-  "<p><a href=\"http://neato.local/console\">Neato Serial Console</a> - <a href=\"https://www.neatorobotics.com/resources/programmersmanual_20140305.pdf\">Command Documentation</a></p>" +
-  "</body></html>\n");
+  "<p><a id='idUpdate' href=''>Update Firmware</a></p>" +
+  "<p><a id='idConsole' href=''>Neato Serial Console</a></p>" +
+  "<p>&nbsp&nbsp&nbsp&nbsp - Enter the command: Help , print a list of all possible cmds.</p>" + 
+  "<p>&nbsp&nbsp&nbsp&nbsp - Enter : Help argument , print the help for that particular command(argument).</p>" + 
+  "</body><script type=\"text/javascript\"> " +
+  "var b=location.hostname;" +
+  "document.getElementById('idFormaction').action='http://'+b+'/reboot'; " +
+  "document.getElementById('idUpdate').href='http://'+b+':82/update'; " +
+  "document.getElementById('idConsole').href='http://'+b+'/console'; " +
+  "</script></html>\n" );
 }
 
 void saveEvent() {
@@ -466,15 +475,8 @@ void setup() {
   server.onNotFound(serverEvent);
   server.begin();
 
-  // start MDNS
-  // this means that the botvac can be reached at http://neato.local or ws://neato.local:81
-  if (!MDNS.begin("neato")) {
-    ESP.reset(); //reset because there's no good reason for setting up MDNS to fail
-  }
-  MDNS.addService("http", "tcp", 80);
-  MDNS.addService("ws", "tcp", 81);
-  MDNS.addService("http", "tcp", 82);
-
+  // MDNS deleted 
+  
   webSocket.sendTXT(currentClient, "ESP-12x: Ready\n");
 }
 
