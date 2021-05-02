@@ -1,7 +1,7 @@
 # botvac-wifi
 forked from HawtDogFlvrWtr/botvac-wifi
 
-###As an enthusiast of the software framework, solve individual problems and create problems at the same time.
+###As a fan of the software framework, solve individual problems and create problems at the same time.
 
 1."void setbothibernate()" solves the problem of not sleeping when installing esp8266 module in Neato botvac.
 
