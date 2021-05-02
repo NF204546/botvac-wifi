@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
-// #include <ESP8266mDNS.h>
 #include <WiFiClient.h>
 #include <WebSocketsServer.h>
 #include <Hash.h>
@@ -14,35 +13,41 @@
 // #include <rBase64.h>
 #include <Base64.h>
 
-
 #define SSID_FILE "etc/ssid"
 #define PASSWORD_FILE "etc/pass"
 #define SERIAL_FILE "etc/serial"
+// #define STIME_FILE "etc/stime"
+#define VOLT1_FILE "etc/volt1"
 
 #define CONNECT_TIMEOUT_SECS 30
 #define SERIAL_NUMBER_ATTEMPTS 5
 
 #define AP_SSID "neato"
 
-#define FIRMWARE "1.7"
+#define FIRMWARE "1.6"
 
 #define MAX_BUFFER 8192
 
-String readString;
+#define RECHARGE_VOLT "13.65"
+
+String rechargeVolt;
+// String readString;
 String incomingErr;
 String batteryInfo;
 String lidarInfo;
 String serialNumber = "Empty";
+
 int lastBattRun = 0;
 int lastLidarRun = 0;
 int lastErrRun = 0;
 int lastTimeRun = 288;
+int batteryRechargePercent = 88;
+// int setSleeptime = 180
 
 WiFiClient client;
 int bufferSize = 0;
 uint8_t currentClient = 0;
 uint8_t serialBuffer[8193];
-// ESP8266WebServer server = ESP8266WebServer(80);
 ESP8266WebServer server (80);
 WebSocketsServer webSocket = WebSocketsServer(81);
 ESP8266WebServer updateServer(82);
@@ -217,17 +222,66 @@ void getBattery() {
         }
       }
     }
+    //rbase64.encode(batteryInfo);
+    //batteryInfo = rbase64.result();
     batteryInfo = base64::encode(batteryInfo);
     batteryInfo.replace('+', '-');
     batteryInfo.replace('/', '_');
     batteryInfo.replace('=', ',');
 }
+
+void setBotHibernate() {
+    Serial.setTimeout(1000);
+    Serial.println("GetCharger");
+    String batteryInfoTemp = Serial.readStringUntil(0x1A);
+    String checkArray[2] = {"ExtPwrPresent", "Discharge_mAH"};
+    String itemValue[2] = {"", ""};
+    for (int i = 0; i < 2; i++){
+      int currentItemIndex = batteryInfoTemp.indexOf(checkArray[i]);
+      if (currentItemIndex > -1){
+        int commaIndex = batteryInfoTemp.indexOf(',',currentItemIndex);
+        int currentItemEnd = batteryInfoTemp.indexOf('\n',currentItemIndex);
+ 		itemValue[i] = batteryInfoTemp.substring(commaIndex+1,currentItemEnd-1);
+        itemValue[i].trim();
+      }
+    }
+     if (itemValue[0] == "1" && itemValue[1].toInt() > 5)  {
+    	Serial.println("TestMode On");
+        delay(1000);
+    	Serial.println("SetSystemMode Hibernate");
+        delay(2000);
+    	Serial.println("TestMode Off");
+    	}
+}
+
+void setBotRecharg() {
+    Serial.setTimeout(1000);
+    Serial.println("GetCharger");
+    String batteryInfoTemp = Serial.readStringUntil(0x1A);
+    String checkArray[5] = {"FuelPercent", "ChargingActive", "ChargingEnabled", "ExtPwrPresent", "VBattV"};
+    String itemValue[5] = {"", "", "", "", ""};
+    for (int i = 0; i < 5; i++){
+      int currentItemIndex = batteryInfoTemp.indexOf(checkArray[i]);
+      if (currentItemIndex > -1){
+        int commaIndex = batteryInfoTemp.indexOf(',',currentItemIndex);
+        int currentItemEnd = batteryInfoTemp.indexOf('\n',currentItemIndex);
+ 		itemValue[i] = batteryInfoTemp.substring(commaIndex+1,currentItemEnd-1);
+        itemValue[i].trim();
+      }
+    }
+    if ( itemValue[0].toInt() > batteryRechargePercent && itemValue[1]=="0" && itemValue[2]=="1" && itemValue[3]=="1" && itemValue[4].toFloat() < rechargeVolt.toFloat() ){
+    	Serial.println("SetFuelGauge 87");
+    }
+}
+
 //create a couple timers that will fire repeatedly every x ms
-TimedAction checkServer = TimedAction(5000,getPage);
+TimedAction checkServer = TimedAction(10000,getPage);
+TimedAction tda_setBotHibernate = TimedAction(180000,setBotHibernate);
+TimedAction tda_setBotRecharg = TimedAction(1800000,setBotRecharg);
 
 void botDissconect() {
   // always disable testmode on disconnect
-  Serial.println("TestMode off");
+  Serial.println("TestMode Off");
 }
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
@@ -237,7 +291,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
       botDissconect();
       break;
     case WStype_CONNECTED:
-      webSocket.sendTXT(num, "connected to Neato");
+      webSocket.sendTXT(num, "connected to Neato\x1A");
       // allow only one concurrent client connection
       currentClient = num;
       // all clients but the last connected client are disconnected
@@ -262,7 +316,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
 
 void serverEvent() {
   // just a very simple websocket terminal, feel free to use a custom one
-  server.send(200, "text/html", "<!DOCTYPE html><meta charset='utf-8' /><style>p{white-space:pre;word-wrap:break-word;font-family:monospace;}</style><title>Neato Console</title><script language='javascript' type='text/javascript'>var b='ws://'+location.hostname+':81/',c,d,e;function g(){d=new WebSocket(b);d.onopen=function(){h('[connected]')};d.onclose=function(){h('[disconnected]')};d.onmessage=function(a){h('<span style=\"color: blue;\">[response] '+a.data+'</span>')};d.onerror=function(a){h('<span style=\"color: red;\">[error] </span> '+a.data)}}\nfunction k(a){if(13==a.keyCode){a=e.value;if('/disconnect'==a)d.close();else if('/clear'==a)for(;c.firstChild;)c.removeChild(c.firstChild);else''!=a&&(h('[sent] '+a),d.send(a));e.value='';e.focus()}}function h(a){var f=document.createElement('p');f.innerHTML=a;c.appendChild(f);window.scrollTo(0,document.body.scrollHeight)}\nwindow.addEventListener('load',function(){c=document.getElementById('c');e=document.getElementById('i');g();document.getElementById('i').addEventListener('keyup',k,!1);e.focus()},!1);</script><h2>Neato Console</h2><div id='c'></div><input type='text' id='i' style=\"width:100%;font-family:monospace;\">\n");
+  server.send(200, "text/html", "<!DOCTYPE html><meta charset='utf-8' /><style>p{white-space:pre;word-wrap:break-word;font-family:monospace;}</style><title>Neato Console</title><script language='javascript' type='text/javascript'>var b='ws://'+location.hostname+':81/',c,d,e,x='';function g(){d=new WebSocket(b);d.onopen=function(){h('[connected]')};d.onclose=function(){h('[disconnected]')};d.onmessage=function(a){x+=a.data;if(x.slice(-1)==\"\\x1a\"){h('<span style=\"color: blue;\">[response]  '+x.replace(/(\\r\\n|\\n|\\r)/g,\"\\n            \").replace(/\\s{13}\\x1a$/,'')+'</span>');}};d.onerror=function(a){h('<span style=\"color: red;\">[error]     </span> '+a.data)}}\nfunction k(a){if(13==a.keyCode){a=e.value;if('/disconnect'==a)d.close();else if('/clear'==a)for(;c.firstChild;)c.removeChild(c.firstChild);else''!=a&&(h('[sent]      '+a),d.send(a));e.value='';e.focus()}}function h(a){x='';var f=document.createElement('p');f.innerHTML=a;c.appendChild(f);window.scrollTo(0,document.body.scrollHeight)}\nwindow.addEventListener('load',function(){c=document.getElementById('c');e=document.getElementById('i');g();document.getElementById('i').addEventListener('keyup',k,!1);e.focus()},!1);</script><h2>Neato Console</h2><div id='c'></div><input type='text' id='i' style=\"width:100%;font-family:monospace;\">\n");
 }
 
 void setupEvent() {
@@ -285,6 +339,17 @@ void setupEvent() {
     passwd_file.readString().toCharArray(passwd, 256);
     passwd_file.close();
   }
+
+  char volt1[256];
+  File volt1_file = SPIFFS.open(VOLT1_FILE, "r");
+  if(!volt1_file) {
+    strcpy(volt1, rechargeVolt.c_str());
+  }
+  else {
+    volt1_file.readString().toCharArray(volt1, 256);
+    volt1_file.close();
+  } 
+
   server.send(200, "text/html", String() + 
   "<!DOCTYPE html><html> <body>" +
   "<p>Neato serial number: <b>" + serialNumber + "</b></p>" +
@@ -294,6 +359,9 @@ void setupEvent() {
   "WPA2 Password:<br />" +
   "<input type=\"text\" name=\"password\" value=\"" + passwd + "\"> <br />" +
   "<br />" +
+  "Recharge Voltage:<br />" +
+  "<input type=\"text\" name=\"volt1\" value=\"" + volt1 + "\"> <br />" +
+  "<br />" + 
   "<input type=\"submit\" value=\"Submit\"> </form>" +
   "<form id='idFormaction' action='' style=\"display: inline;\">" +
   "<input type=\"submit\" value=\"Reboot\" />" +
@@ -314,8 +382,9 @@ void setupEvent() {
 void saveEvent() {
   String user_ssid = server.arg("ssid");
   String user_password = server.arg("password");
+  String user_rechargeVolt = server.arg("volt1");
   SPIFFS.format();
-  if(user_ssid != "" && user_password != "") {
+  if(user_ssid != "" && user_password != "" && user_rechargeVolt != "") {
     File ssid_file = SPIFFS.open(SSID_FILE, "w");
     if (!ssid_file) {
       server.send(200, "text/html", "<!DOCTYPE html><html> <body> Setting Access Point SSID failed!</body> </html>");
@@ -331,10 +400,19 @@ void saveEvent() {
     passwd_file.print(user_password);
     passwd_file.close();
 
+    File volt1_file = SPIFFS.open(VOLT1_FILE, "w");
+    if (!volt1_file) {
+      server.send(200, "text/html", "<!DOCTYPE html><html> <body> Setting Recharge Voltage failed!</body> </html>");
+      return;
+    }
+    volt1_file.print(user_rechargeVolt);
+    volt1_file.close(); 
+
     server.send(200, "text/html", String() + 
     "<!DOCTYPE html><html> <body>" +
     "Setting Access Point SSID / password was successful! <br />" +
     "<br />SSID was set to \"" + user_ssid + "\" with the password \"" + user_password + "\". <br />" +
+    "<br />Recharge Voltage set to \"" + user_rechargeVolt + "\". <br />" +
     "<br /> The controller will now reboot. Please re-connect to your Wi-Fi network.<br />" +
     "If the SSID or password was incorrect, the controller will return to Access Point mode." +
     "</body> </html>");
@@ -354,7 +432,7 @@ void rebootEvent() {
 void serialEvent() {
   while (Serial.available() > 0) {
     char in = Serial.read();
-    // there is no proper utf-8 support so replace all non-ascii
+    // there is no propper utf-8 support so replace all non-ascii
     // characters (<127) with underscores; this should have no
     // impact on normal operations and is only relevant for non-english
     // plain-text error messages
@@ -363,32 +441,13 @@ void serialEvent() {
     }
     serialBuffer[bufferSize] = in;
     bufferSize++;
-    // fill up the serial buffer until its max size (8192 bytes, see MAX_BUFFER)
+    // fill up the serial buffer until its max size (8192 bytes, see maxBuffer)
     // or unitl the end of file marker (ctrl-z; \x1A) is reached
-    // a worst caste lidar result should be just under 8k, so that MAX_BUFFER
+    // a worst caste lidar result should be just under 8k, so that maxBuffer
     // limit should not be reached under normal conditions
     if (bufferSize > MAX_BUFFER - 1 || in == '\x1A') {
       serialBuffer[bufferSize] = '\0';
-      bool allSend = false;
-      uint8_t localBuffer[1464];
-      int localNum = 0;
-      int bufferNum = 0;
-      while (!allSend) {
-        localBuffer[localNum] = serialBuffer[bufferNum];
-        localNum++;
-        // split the websocket packet in smaller (1300 + x) byte packets
-        // this is a workaround for some issue that causes data corruption
-        // if the payload is split by the wifi library into more than 2 tcp packets
-        if (serialBuffer[bufferNum] == '\x1A' || (serialBuffer[bufferNum] == '\n' && localNum > 1300)) {
-          localBuffer[localNum] = '\0';
-          localNum = 0;
-          webSocket.sendTXT(currentClient, localBuffer);
-        }
-        if (serialBuffer[bufferNum] == '\x1A') {
-          allSend = true;
-        }
-        bufferNum++;
-      }
+      webSocket.sendTXT(currentClient, serialBuffer);
       serialBuffer[0] = '\0';
       bufferSize = 0;
     }
@@ -422,6 +481,7 @@ void setup() {
     WiFi.disconnect();
     WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, passwd);
+    // WiFi.begin("test1234","test1234");
     for(int i = 0; i < CONNECT_TIMEOUT_SECS * 20 && WiFi.status() != WL_CONNECTED; i++) {
       delay(50);
     }
@@ -435,6 +495,16 @@ void setup() {
       ESP.reset(); //reset because there's no good reason for setting up an AP to fail
     }
   }
+  
+  if(SPIFFS.exists(VOLT1_FILE)) {
+    File volt1_file = SPIFFS.open(VOLT1_FILE, "r");
+    rechargeVolt = volt1_file.readString();
+    volt1_file.close();
+    }
+  rechargeVolt.trim();
+  if (rechargeVolt == "") {
+    rechargeVolt = RECHARGE_VOLT;
+  } 
 
   // start websocket
   webSocket.begin();
@@ -475,8 +545,6 @@ void setup() {
   server.onNotFound(serverEvent);
   server.begin();
 
-  // MDNS deleted 
-  
   webSocket.sendTXT(currentClient, "ESP-12x: Ready\n");
 }
 
@@ -493,5 +561,7 @@ void loop() {
   checkServer.check();
   updateServer.handleClient();
   checkServer.check();
+  tda_setBotHibernate.check();
+  tda_setBotRecharg.check();
   serialEvent();
   }
