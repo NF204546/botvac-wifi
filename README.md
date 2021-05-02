@@ -16,8 +16,7 @@ In order to compile and run normally in the current environment, several stateme
 *2. 去掉mDNS相关语句，同时修改setupEvent()中生成的网页，相关链接改用IP    
     Remove the mDNS related statements, modify the web pages generated in setupevent(), and change the related links to IP address
 
-*3. 原项目中的rBase64语句，如 x=rbase64.encode(stringY)，经测试不能正常工作，改为：
-    
+*3. 原项目中的rBase64语句，如 x=rbase64.encode(stringY)，经测试不能正常工作，改为：    
     The rbase64 statement in the original project, such as x = rbase64. Encode (string y),After testing, it can not work normally	
 	
 	rbase64.encode(stringY);    
